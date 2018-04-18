@@ -74,8 +74,10 @@ if (cluster.isMaster) {
     //prepare book message
     //generate uuid
     let uuid = uuidv1();
+    version = version + 1;
 
     let msg = {
+      messageType: "book",
       UUID: uuid,
       fromPort: port,
       version: version,
@@ -90,13 +92,14 @@ if (cluster.isMaster) {
     // add random peer
     // let randomNode = 
     const randomTx = {
+      messageType: "tx",
       amount: amount
     }
-    // gossip(randomTx)
+    gossip(randomTx)
   }
 
   //call that function every 5 sec
-  setInterval(pickRandomBook, 5000);
+  // setInterval(pickRandomBook, 5000);
   setInterval(pickRandomTx, 5000);
 
 
@@ -125,9 +128,6 @@ if (cluster.isMaster) {
 
 
   const gossip = (msg) => {
-
-
-    version = version + 1;
     //loop that sends to all peers
     for (var i = 0; i < peers.length; i++) {
       request(
@@ -148,21 +148,30 @@ if (cluster.isMaster) {
     console.log('test req.body: ', req.body);
     // const currentNodeState = nodeState['3000'];
     //check uuid // TODO: add to uuid history
-    const messagePort = req.body.fromPort;
-    const portNodeState = nodeState[messagePort];
-    if (portNodeState) {
-      if (req.body['UUID'] !== portNodeState.UUID) {
-        console.log('uuid: ', req.body['UUID'], 'nodestate uuid > ', portNodeState.UUID);
-        //check version numbers
-        if (req.body.version > portNodeState.version) {
-          console.log(' body version >', req.body.version, 'nodestate version > ', portNodeState.version);
-          //set to state
-          nodeState[messagePort] = req.body;
+    if(req.body.type === "book") {
+      const messagePort = req.body.fromPort;
+      const portNodeState = nodeState[messagePort];
+  
+
+      if (portNodeState) {
+        if (req.body['UUID'] !== portNodeState.UUID) {
+          console.log('uuid: ', req.body['UUID'], 'nodestate uuid > ', portNodeState.UUID);
+          //check version numbers
+          if (req.body.version > portNodeState.version) {
+            console.log(' body version >', req.body.version, 'nodestate version > ', portNodeState.version);
+            //set to state
+            nodeState[messagePort] = req.body;
+          }
         }
+      } else {
+        nodeState[messagePort] = req.body;
+        console.log(nodeState, '< nodestate');
       }
-    } else {
-      nodeState[messagePort] = req.body;
-      console.log(nodeState, '< nodestate');
+    }
+
+    if(req.body.messageType === "tx") {
+      console.log('tx body :', req.body)
+      transactions.push(req.body);
     }
 
     // continue to push message based on ttl
@@ -192,6 +201,11 @@ if (cluster.isMaster) {
   app.get('/nodeState', (req, res) => {
     res.send(nodeState);
   });
+
+  app.get('/transactions', (req, res) => {
+    res.send(transactions);
+  });
+
   app.get('/favBook', (req, res) => {
     res.send(favBook);
   });
