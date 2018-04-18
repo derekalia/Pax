@@ -23,16 +23,21 @@ app.use(bodyParser.urlencoded({ extended: true }));
 if (cluster.isMaster) {
   console.log(`Master ${process.pid} is running`);
 
-  // Fork workers.
-  for (let i = 0; i < 1; i++) {
-    cluster.fork();
-  }
+  console.log("number of cpu's", numCPUs);
+
+  const minter = cluster.fork();
+
+  minter.on('message', function(message) {
+    console.log(
+      `master ${process.pid} recevies message '${JSON.stringify(message)}' from worker ${minter.process.pid}`
+    );
+
+    minter.send({ msg: `Message from master ${process.pid}, good job!` });
+  });
 
   cluster.on('exit', (worker, code, signal) => {
     console.log(`worker ${worker.process.pid} died`);
   });
-
-  console.log("number of cpu's", numCPUs);
 
   //3000: {port:3000, uuid: 3001, va}
   let nodeState = {};
@@ -236,20 +241,26 @@ if (cluster.isMaster) {
     'Mr Blandings Builds His Dream House by Eric Hodgkins'
   ];
 } else {
-  console.log(`Worker ${process.pid} started`);
+
+  //minter code 
+
+
   
+  process.on('message', function(message) {
+    console.log(`slace ${process.pid} recevies message '${JSON.stringify(message)}' master`);
+  });
+
+  console.log(`Worker ${process.pid} started`);
+
   let work_factor = 3;
-
-
-
-  const mintFactory = (_work_factor) => {
+  const mintFactory = _work_factor => {
     let token = null;
     let challenge;
-  
+
     while (token === null) {
       challenge = randomstring.generate();
       token = mint(challenge, _work_factor);
-      console.log(challenge)
+      console.log(challenge);
     }
     return [challenge, token];
   };
@@ -261,7 +272,7 @@ if (cluster.isMaster) {
       .createHash('sha256')
       .update(_challenge)
       .digest('hex');
-  
+
     for (var i = 0; i < token.length; i++) {
       if (token[i] === '0') {
         tokenZeros++;
@@ -269,23 +280,21 @@ if (cluster.isMaster) {
         break;
       }
     }
-  
+
     if (tokenZeros >= _work_factor) {
       return token;
     } else {
       return null;
     }
   };
-  
 
-  
-  
-  let mintedArray = mintFactory(work_factor)
+  let mintedArray = mintFactory(work_factor);
 
-  console.log('find that string! ', mintedArray);
+  // console.log('find that string! ', mintedArray);
 
+  process.send({ msg: `I found this! ${mintedArray}` });
 
-  
-
-  
+  process.on('message', () => {
+    console.log('Gee thanks');
+  });
 }
