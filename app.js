@@ -59,15 +59,46 @@ if (cluster.isMaster) {
   var peers = [];
   var ttl = 2;
 
+  // naive: tx get pushed into this arr, if a block is found, we batch these tx run over the balances an update those
+  //then bundle them into a block and push that block to the nodes we are connected to
+  var balances = [];
+  var transactions = [];
+
+
   //pick a random book and set it to favBook
   const pickRandomBook = () => {
     let random = Math.floor(Math.random() * 55) + 1;
+
     favBook = books[random];
-    gossip();
+
+    //prepare book message
+    //generate uuid
+    let uuid = uuidv1();
+
+    let msg = {
+      UUID: uuid,
+      fromPort: port,
+      version: version,
+      TTL: ttl,
+      favBook: favBook,
+    };
+    gossip(msg);
   };
 
-  //call that function every 10 sec
+  const pickRandomTx = () => {
+    let amount = Math.floor(Math.random() * 55) + 1;
+    // add random peer
+    // let randomNode = 
+    const randomTx = {
+      amount: amount
+    }
+    // gossip(randomTx)
+  }
+
+  //call that function every 5 sec
   setInterval(pickRandomBook, 5000);
+  setInterval(pickRandomTx, 5000);
+
 
   const verify = (_challenge, _token, _work_factor) => {
     let token = crypto
@@ -91,17 +122,10 @@ if (cluster.isMaster) {
     return false;
   };
 
-  //generate uuid
-  const gossip = () => {
-    let uuid = uuidv1();
 
-    let msg = {
-      UUID: uuid,
-      fromPort: port,
-      version: version,
-      TTL: ttl,
-      favBook: favBook
-    };
+
+  const gossip = (msg) => {
+
 
     version = version + 1;
     //loop that sends to all peers
