@@ -22,11 +22,28 @@ app.use(bodyParser.urlencoded({ extended: true }));
 if (cluster.isMaster) {
   console.log(`Master ${process.pid} is running`);
 
-  const minter = cluster.fork();
-
+  let minter; // minter = cluster.fork();
   let startingToken = 'd939dj3';
-  //send it a msg=
-  minter.send({ type: 'start', startingToken, work_factor: 4 });
+  let work_factor = 3;
+
+  const startMinter = (_startingToken, _work_factor) => {
+    minter = cluster.fork();
+    minter.send({ type: 'start', startingToken: _startingToken, work_factor: _work_factor });
+  };
+
+
+  const killMinter = minter => {
+    minter.send('shutdown');
+    minter.disconnect();
+    timeout = setTimeout(() => {
+      slave.kill();
+    }, 1000);
+  };
+
+
+  startMinter(startingToken, work_factor);
+
+  console.log('here!');
 
   //receive message
   minter.on('message', msg => {
@@ -64,7 +81,6 @@ if (cluster.isMaster) {
   var balances = [];
   var transactions = [];
 
-
   //pick a random book and set it to favBook
   const pickRandomBook = () => {
     let random = Math.floor(Math.random() * 55) + 1;
@@ -77,12 +93,12 @@ if (cluster.isMaster) {
     version = version + 1;
 
     let msg = {
-      messageType: "book",
+      messageType: 'book',
       UUID: uuid,
       fromPort: port,
       version: version,
       TTL: ttl,
-      favBook: favBook,
+      favBook: favBook
     };
     gossip(msg);
   };
@@ -90,18 +106,17 @@ if (cluster.isMaster) {
   const pickRandomTx = () => {
     let amount = Math.floor(Math.random() * 55) + 1;
     // add random peer
-    // let randomNode = 
+    // let randomNode =
     const randomTx = {
-      messageType: "tx",
+      messageType: 'tx',
       amount: amount
-    }
-    gossip(randomTx)
-  }
+    };
+    gossip(randomTx);
+  };
 
   //call that function every 5 sec
   // setInterval(pickRandomBook, 5000);
   setInterval(pickRandomTx, 5000);
-
 
   const verify = (_challenge, _token, _work_factor) => {
     let token = crypto
@@ -125,9 +140,7 @@ if (cluster.isMaster) {
     return false;
   };
 
-
-
-  const gossip = (msg) => {
+  const gossip = msg => {
     //loop that sends to all peers
     for (var i = 0; i < peers.length; i++) {
       request(
@@ -148,10 +161,9 @@ if (cluster.isMaster) {
     console.log('test req.body: ', req.body);
     // const currentNodeState = nodeState['3000'];
     //check uuid // TODO: add to uuid history
-    if(req.body.type === "book") {
+    if (req.body.type === 'book') {
       const messagePort = req.body.fromPort;
       const portNodeState = nodeState[messagePort];
-  
 
       if (portNodeState) {
         if (req.body['UUID'] !== portNodeState.UUID) {
@@ -169,9 +181,49 @@ if (cluster.isMaster) {
       }
     }
 
-    if(req.body.messageType === "tx") {
-      console.log('tx body :', req.body)
+    if (req.body.messageType === 'tx') {
+      console.log('tx body :', req.body);
       transactions.push(req.body);
+    }
+
+    if (req.body.messageType === 'block') {
+      console.log('block body :', req.body);
+
+      let block = req.body;
+
+      //verify
+      const verify = (_challenge, _token, _work_factor) => {
+        let token = crypto
+          .createHash('sha256')
+          .update(_challenge)
+          .digest('hex');
+
+        let tokenZeros = 0;
+
+        for (var i = 0; i < token.length; i++) {
+          if (token[i] === '0') {
+            tokenZeros++;
+          } else {
+            break;
+          }
+        }
+
+        if (_token == token && tokenZeros >= _work_factor) {
+          return true;
+        }
+        return false;
+      };
+
+      if (verify(block.challenge, block.token, block.work_factor)) {
+        transactions.push(block);
+
+        killMinter(minter);
+
+        startMinter(block.token, block.work_factor);
+      }
+      //kill slave
+
+      //start new slave
     }
 
     // continue to push message based on ttl
@@ -329,6 +381,7 @@ if (cluster.isMaster) {
     while (token === null) {
       challenge = randomstring.generate();
       token = mint(challenge, _work_factor, _startingToken);
+
       console.log(challenge);
     }
     sendToken(challenge, token, _work_factor);
