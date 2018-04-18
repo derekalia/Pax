@@ -26,7 +26,7 @@ if (cluster.isMaster) {
 
   let startingToken = 'd939dj3';
   //send it a msg=
-  minter.send({ type: 'start', startingToken, work_factor: 4 });
+  minter.send({ type: 'start', startingToken, work_factor: 5 });
 
   //receive message
   minter.on('message', msg => {
@@ -293,7 +293,7 @@ if (cluster.isMaster) {
       token = mint(challenge, _work_factor, _startingToken);
       console.log(challenge);
     }
-    sendToken(challenge, token, _work_factor);
+    sendAnswer(challenge, token, _work_factor);
   };
 
   const mint = (_challenge, _work_factor, _startingToken) => {
@@ -319,7 +319,7 @@ if (cluster.isMaster) {
     }
   };
 
-  const sendToken = (challenge, token, work_factor) => {
+  const sendAnswer = (challenge, token, work_factor) => {
     process.send({ type: 'found', challenge, token, work_factor });
   };
 }
