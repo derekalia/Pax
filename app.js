@@ -14,6 +14,7 @@ var mint = require('./mint.js');
 let randomstring = require('randomstring');
 var crypto = require('crypto');
 
+
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
@@ -62,7 +63,7 @@ if (cluster.isMaster) {
   // naive: tx get pushed into this arr, if a block is found, we batch these tx run over the balances an update those
   //then bundle them into a block and push that block to the nodes we are connected to
   var balances = [];
-  var transactions = [];
+  var block = [];
 
 
   //pick a random book and set it to favBook
@@ -84,18 +85,36 @@ if (cluster.isMaster) {
       TTL: ttl,
       favBook: favBook,
     };
-    gossip(msg);
+    gossip(msg, peers);
   };
 
   const pickRandomTx = () => {
     let amount = Math.floor(Math.random() * 55) + 1;
-    // add random peer
-    // let randomNode = 
+    let uuid = uuidv1();
+    const randomPort = peers[Math.floor(Math.random()*peers.length)];
     const randomTx = {
       messageType: "tx",
-      amount: amount
+      amount: amount,
+      UUID: uuid,
+      fromPort: port,
+      toPort: randomPort,
+      version: version,
+      TTL: ttl,
     }
-    gossip(randomTx)
+    gossip(randomTx, peers)
+  }
+
+  const blockFound = () => {
+    let uuid = uuidv1();
+    const blockMessage = {
+      messageType: "block",
+      amount: amount,
+      UUID: uuid,
+      fromPort: port,
+      version: version,
+      TTL: ttl,
+    }
+    gossip(blockMessage, peers)
   }
 
   //call that function every 5 sec
@@ -127,12 +146,12 @@ if (cluster.isMaster) {
 
 
 
-  const gossip = (msg) => {
+  const gossip = (msg, nodePeers) => {
     //loop that sends to all peers
-    for (var i = 0; i < peers.length; i++) {
+    for (var i = 0; i < nodePeers.length; i++) {
       request(
         {
-          url: 'http://localhost:' + peers[i] + '/gossip',
+          url: 'http://localhost:' + nodePeers[i] + '/gossip',
           method: 'POST',
           json: msg
         },
@@ -151,7 +170,7 @@ if (cluster.isMaster) {
     if(req.body.type === "book") {
       const messagePort = req.body.fromPort;
       const portNodeState = nodeState[messagePort];
-  
+
 
       if (portNodeState) {
         if (req.body['UUID'] !== portNodeState.UUID) {
@@ -170,9 +189,18 @@ if (cluster.isMaster) {
     }
 
     if(req.body.messageType === "tx") {
-      console.log('tx body :', req.body)
-      transactions.push(req.body);
+      console.log('tx body :', req.body);
+      const foundIndex = block.findIndex((tx) => {
+        return tx['UUID'] == req.body['UUID'];
+      })
+      console.log('FOUNDINDEX: ', foundIndex)
+      if (foundIndex < 0) {
+        console.log('pusssssheeeed')
+
+        block.push(req.body);
+      }
     }
+
 
     // continue to push message based on ttl
     const hoppedMessage = req.body;
@@ -198,12 +226,13 @@ if (cluster.isMaster) {
     res.send('push recieved');
   });
 
+//Client Routes
   app.get('/nodeState', (req, res) => {
     res.send(nodeState);
   });
 
-  app.get('/transactions', (req, res) => {
-    res.send(transactions);
+  app.get('/block', (req, res) => {
+    res.send(block);
   });
 
   app.get('/favBook', (req, res) => {
@@ -229,7 +258,7 @@ if (cluster.isMaster) {
       function(error, response, body) {
         let otherPort = String(body);
 
-        if (peers.indexOf(otherPort) === -1 && otherPort !== 'undefined') {
+        if (`peers.indexOf(otherPort) === -1 && otherPort !== 'undefined'`) {
           peers.push(otherPort);
         }
       }
