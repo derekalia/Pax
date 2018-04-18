@@ -41,7 +41,7 @@ const mintFactory = () => {
 // let mintedArray = mintFactory();
 
 
-const verify = (_challenge, _token, _work_factor) => {
+ const verify = (_challenge, _token, _work_factor) => {
 	let token = crypto
 		.createHash('sha256')
 		.update(_challenge)
