@@ -31,7 +31,6 @@ if (cluster.isMaster) {
     minter.send({ type: 'start', startingToken: _startingToken, work_factor: _work_factor });
   };
 
-
   const killMinter = minter => {
     minter.send('shutdown');
     minter.disconnect();
@@ -39,7 +38,6 @@ if (cluster.isMaster) {
       slave.kill();
     }, 1000);
   };
-
 
   startMinter(startingToken, work_factor);
 
