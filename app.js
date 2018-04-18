@@ -11,7 +11,6 @@ var request = require('request');
 var bodyParser = require('body-parser');
 const uuidv1 = require('uuid');
 var mint = require('./mint.js');
-
 let randomstring = require('randomstring');
 var crypto = require('crypto');
 
@@ -23,21 +22,34 @@ app.use(bodyParser.urlencoded({ extended: true }));
 if (cluster.isMaster) {
   console.log(`Master ${process.pid} is running`);
 
-  console.log("number of cpu's", numCPUs);
-
   const minter = cluster.fork();
 
-  minter.on('message', function(message) {
-    console.log(
-      `master ${process.pid} recevies message '${JSON.stringify(message)}' from worker ${minter.process.pid}`
-    );
+  let startingToken = 'd939dj3';
+  //send it a msg=
+  minter.send({ type: 'start', startingToken, work_factor: 4 });
 
-    minter.send({ msg: `Message from master ${process.pid}, good job!` });
+  //receive message
+  minter.on('message', msg => {
+    if (msg.type === 'found') {
+      console.log('found it', msg.token);
+      console.log('found it', msg.challenge);
+      console.log('found it', msg.work_factor);
+      foundAnswer(msg.challenge, msg.token);
+    } else {
+      console.log(
+        `master ${process.pid} recevies message '${JSON.stringify(message)}' from worker ${minter.process.pid}`
+      );
+    }
   });
 
+  //send minter a token to use to start hashing
   cluster.on('exit', (worker, code, signal) => {
     console.log(`worker ${worker.process.pid} died`);
   });
+
+  const foundAnswer = (challenge, token) => {
+    return;
+  };
 
   //3000: {port:3000, uuid: 3001, va}
   let nodeState = {};
@@ -47,11 +59,6 @@ if (cluster.isMaster) {
   var peers = [];
   var ttl = 2;
 
-  //get the params from the console
-  // process.argv.forEach((val, index) => {
-  //   console.log(`${index}: ${val}`);
-  // });
-
   //pick a random book and set it to favBook
   const pickRandomBook = () => {
     let random = Math.floor(Math.random() * 55) + 1;
@@ -59,10 +66,30 @@ if (cluster.isMaster) {
     gossip();
   };
 
-  //call that function every 20 sec
-  setInterval(pickRandomBook, 10000);
+  //call that function every 10 sec
+  setInterval(pickRandomBook, 5000);
 
-  //call the gossip () which sends its peers a msg.
+  const verify = (_challenge, _token, _work_factor) => {
+    let token = crypto
+      .createHash('sha256')
+      .update(_challenge)
+      .digest('hex');
+
+    let tokenZeros = 0;
+
+    for (var i = 0; i < token.length; i++) {
+      if (token[i] === '0') {
+        tokenZeros++;
+      } else {
+        break;
+      }
+    }
+
+    if (_token == token && tokenZeros >= _work_factor) {
+      return true;
+    }
+    return false;
+  };
 
   //generate uuid
   const gossip = () => {
@@ -133,7 +160,6 @@ if (cluster.isMaster) {
         );
       }
     }
-
     //check ttl - decrement
     //push to other peers
     res.send('push recieved');
@@ -142,13 +168,16 @@ if (cluster.isMaster) {
   app.get('/nodeState', (req, res) => {
     res.send(nodeState);
   });
+  app.get('/favBook', (req, res) => {
+    res.send(favBook);
+  });
 
   app.get('/getPeers', (req, res) => {
     res.send(peers);
   });
 
   app.get('/', (req, res) => {
-    console.log(books);
+    // console.log(books);
     res.sendFile(__dirname + '/index.html');
   });
 
@@ -241,36 +270,39 @@ if (cluster.isMaster) {
     'Mr Blandings Builds His Dream House by Eric Hodgkins'
   ];
 } else {
-
-  //minter code 
-
-
-  
-  process.on('message', function(message) {
-    console.log(`slace ${process.pid} recevies message '${JSON.stringify(message)}' master`);
-  });
-
+  //minter code
   console.log(`Worker ${process.pid} started`);
 
-  let work_factor = 3;
-  const mintFactory = _work_factor => {
+  let lastToken;
+
+  process.on('message', msg => {
+    if (msg.type == 'start') {
+      console.log(`starting with ${msg.startingToken} and ${msg.work_factor} `);
+      mintFactory(msg.startingToken, msg.work_factor);
+    } else {
+      console.log('Gee thanks', msg);
+    }
+  });
+
+  const mintFactory = (_startingToken, _work_factor) => {
     let token = null;
     let challenge;
 
     while (token === null) {
       challenge = randomstring.generate();
-      token = mint(challenge, _work_factor);
+      token = mint(challenge, _work_factor, _startingToken);
       console.log(challenge);
     }
-    return [challenge, token];
+    sendToken(challenge, token, _work_factor);
   };
 
-  const mint = (_challenge, _work_factor) => {
+  const mint = (_challenge, _work_factor, _startingToken) => {
     let token;
     let tokenZeros = 0;
+
     token = crypto
       .createHash('sha256')
-      .update(_challenge)
+      .update(_challenge + _startingToken)
       .digest('hex');
 
     for (var i = 0; i < token.length; i++) {
@@ -280,7 +312,6 @@ if (cluster.isMaster) {
         break;
       }
     }
-
     if (tokenZeros >= _work_factor) {
       return token;
     } else {
@@ -288,13 +319,7 @@ if (cluster.isMaster) {
     }
   };
 
-  let mintedArray = mintFactory(work_factor);
-
-  // console.log('find that string! ', mintedArray);
-
-  process.send({ msg: `I found this! ${mintedArray}` });
-
-  process.on('message', () => {
-    console.log('Gee thanks');
-  });
+  const sendToken = (challenge, token, work_factor) => {
+    process.send({ type: 'found', challenge, token, work_factor });
+  };
 }
