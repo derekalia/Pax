@@ -32,17 +32,19 @@ if (cluster.isMaster) {
     minter.send({ type: 'start', startingToken: _startingToken, work_factor: _work_factor });
   };
 
+  startMinter(startingToken, work_factor);
+
   const killMinter = minter => {
     minter.send('shutdown');
     minter.disconnect();
     timeout = setTimeout(() => {
-      slave.kill();
+      minter.kill();
     }, 1000);
   };
 
-  startMinter(startingToken, work_factor);
 
-  console.log('here!');
+
+
 
   //receive message
   minter.on('message', msg => {
@@ -50,7 +52,9 @@ if (cluster.isMaster) {
       console.log('found it', msg.token);
       console.log('found it', msg.challenge);
       console.log('found it', msg.work_factor);
-      blockBuilder(msg.challenge, msg.token, msg.work_factor);
+      blockBuilder(msg.challenge, msg.token, msg.work_factor,msg.previousToken);
+      killMinter(minter);
+      startMinter(msg.previousToken,msg.work_factor);
     } else {
       console.log(
         `master ${process.pid} recevies message '${JSON.stringify(message)}' from worker ${minter.process.pid}`
@@ -63,7 +67,7 @@ if (cluster.isMaster) {
     console.log(`worker ${worker.process.pid} died`);
   });
 
-  const blockBuilder = (challenge, token, work_factor) => {
+  const blockBuilder = (challenge, token, work_factor,previousToken) => {
     let uuid = uuidv1();
     const blockMessage = {
       messageType: "block",
@@ -74,7 +78,8 @@ if (cluster.isMaster) {
       challenge,
       token,
       work_factor,
-      block
+      block,
+      previousToken
     }
     block = [];
     gossip(blockMessage, peers)
@@ -221,10 +226,11 @@ if (cluster.isMaster) {
       let block = req.body;
 
       //verify
-      const verify = (_challenge, _token, _work_factor) => {
+      const verify = (_challenge, _token, _work_factor,_previousToken) => {
+        console.log('VERIFY DEF')
         let token = crypto
           .createHash('sha256')
-          .update(_challenge)
+          .update(_challenge + _previousToken)
           .digest('hex');
 
         let tokenZeros = 0;
@@ -236,14 +242,22 @@ if (cluster.isMaster) {
             break;
           }
         }
-
+        console.log()
         if (_token == token && tokenZeros >= _work_factor) {
           return true;
         }
         return false;
       };
+      let tokenconsole = crypto
+        .createHash('sha256')
+        .update(block.challenge + block.previousToken)
+        .digest('hex');
 
-      if (verify(block.challenge, block.token, block.work_factor)) {
+      console.log('TOKENS', block.token == tokenconsole)
+      // console.log('CHALLENGE TOKEN WORK', block.challenge, block.token, block.work_factor);
+
+      if (verify(block.challenge, block.token, block.work_factor, block.previousToken)) {
+        console.log('NEVER IN HERE');
         blockchain.push(block);
 
         killMinter(minter);
@@ -418,7 +432,7 @@ if (cluster.isMaster) {
 
       console.log(challenge);
     }
-    sendToken(challenge, token, _work_factor);
+    sendToken(challenge, token, _work_factor,_startingToken);
   };
 
   const mint = (_challenge, _work_factor, _startingToken) => {
@@ -444,7 +458,10 @@ if (cluster.isMaster) {
     }
   };
 
-  const sendToken = (challenge, token, work_factor) => {
-    process.send({ type: 'found', challenge, token, work_factor });
+
+  const sendToken = (challenge, token, work_factor,previousToken) => {
+
+    console.log('found token!');
+    process.send({ type: 'found', challenge, token, work_factor,previousToken });
   };
 }
