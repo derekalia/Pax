@@ -50,7 +50,7 @@ if (cluster.isMaster) {
       console.log('found it', msg.token);
       console.log('found it', msg.challenge);
       console.log('found it', msg.work_factor);
-      foundAnswer(msg.challenge, msg.token);
+      blockBuilder(msg.challenge, msg.token, msg.work_factor);
     } else {
       console.log(
         `master ${process.pid} recevies message '${JSON.stringify(message)}' from worker ${minter.process.pid}`
@@ -63,8 +63,21 @@ if (cluster.isMaster) {
     console.log(`worker ${worker.process.pid} died`);
   });
 
-  const foundAnswer = (challenge, token) => {
-    return;
+  const blockBuilder = (challenge, token, work_factor) => {
+    let uuid = uuidv1();
+    const blockMessage = {
+      messageType: "block",
+      UUID: uuid,
+      fromPort: port,
+      version: version,
+      TTL: ttl,
+      challenge,
+      token,
+      work_factor,
+      block
+    }
+    block = [];
+    gossip(blockMessage, peers)
   };
 
   //3000: {port:3000, uuid: 3001, va}
@@ -74,6 +87,7 @@ if (cluster.isMaster) {
   var gossipHistory = [];
   var peers = [];
   var ttl = 2;
+  const blockchain = [];
 
   // naive: tx get pushed into this arr, if a block is found, we batch these tx run over the balances an update those
   //then bundle them into a block and push that block to the nodes we are connected to
@@ -116,19 +130,6 @@ if (cluster.isMaster) {
       TTL: ttl,
     }
     gossip(randomTx, peers)
-  }
-
-  const blockFound = () => {
-    let uuid = uuidv1();
-    const blockMessage = {
-      messageType: "block",
-      amount: amount,
-      UUID: uuid,
-      fromPort: port,
-      version: version,
-      TTL: ttl,
-    }
-    gossip(blockMessage, peers)
   }
 
   //call that function every 5 sec
@@ -243,7 +244,7 @@ if (cluster.isMaster) {
       };
 
       if (verify(block.challenge, block.token, block.work_factor)) {
-        transactions.push(block);
+        blockchain.push(block);
 
         killMinter(minter);
 
@@ -285,6 +286,10 @@ if (cluster.isMaster) {
 
   app.get('/block', (req, res) => {
     res.send(block);
+  });
+
+  app.get('/blockchain', (req, res) => {
+    res.send(blockchain);
   });
 
   app.get('/favBook', (req, res) => {
