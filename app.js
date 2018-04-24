@@ -14,7 +14,6 @@ var mint = require('./mint.js');
 let randomstring = require('randomstring');
 var crypto = require('crypto');
 
-
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
@@ -25,52 +24,68 @@ if (cluster.isMaster) {
 
   let minter; // minter = cluster.fork();
   let startingToken = 'd939dj3';
-  let work_factor = 3;
+  let work_factor = 6;
+
+  //receive message
+  let listen = minter => {
+    minter.on('message', async msg => {
+      if (msg.type === 'found') {
+        // console.log('found it', msg.token);
+        // console.log('found it', msg.challenge);
+        // console.log('found it', msg.work_factor);
+        console.log('HERHEHEHEHEH');
+        blockBuilder(msg.challenge, msg.token, msg.work_factor, msg.previousToken);
+        newChallenge(msg.previousToken, msg.work_factor, minter);
+      } else {
+        console.log(
+          `master ${process.pid} recevies message '${JSON.stringify(message)}' from worker ${minter.process.pid}`
+        );
+      }
+    });
+  };
 
   const startMinter = (_startingToken, _work_factor) => {
     minter = cluster.fork();
+    listen(minter);
+    console.log('starting new minter');
     minter.send({ type: 'start', startingToken: _startingToken, work_factor: _work_factor });
   };
 
-  startMinter(startingToken, work_factor);
+  const newChallenge = (_startingToken, _work_factor, minter) => {
+    let workers = cluster.workers || { key: 1 };
+    console.log('workers', workers);
+    let numWorkers = workers.keys;
+    console.log('numWorkers', numWorkers);
+    while (numWorkers) {
+      console.log('new challenge');
+      minter.send({ type: 'start', startingToken: _startingToken, work_factor: _work_factor });
+    }
+  };
+
+  // startMinter(startingToken, work_factor);
+  // console.log("minter", minter.id)
 
   const killMinter = minter => {
     minter.send('shutdown');
     minter.disconnect();
-    timeout = setTimeout(() => {
+    setTimeout(() => {
       minter.kill();
-    }, 1000);
+      console.log('isDead', minter.isDead());
+    }, 2000);
   };
 
-
-
-
-
-  //receive message
-  minter.on('message', msg => {
-    if (msg.type === 'found') {
-      console.log('found it', msg.token);
-      console.log('found it', msg.challenge);
-      console.log('found it', msg.work_factor);
-      blockBuilder(msg.challenge, msg.token, msg.work_factor,msg.previousToken);
-      killMinter(minter);
-      startMinter(msg.previousToken,msg.work_factor);
-    } else {
-      console.log(
-        `master ${process.pid} recevies message '${JSON.stringify(message)}' from worker ${minter.process.pid}`
-      );
-    }
-  });
+  startMinter(startingToken, work_factor);
 
   //send minter a token to use to start hashing
   cluster.on('exit', (worker, code, signal) => {
-    console.log(`worker ${worker.process.pid} died`);
+    console.log(`minter ${worker.process.pid} died`);
   });
 
-  const blockBuilder = (challenge, token, work_factor,previousToken) => {
+  const blockBuilder = (challenge, token, work_factor, previousToken) => {
+    console.log('building the block');
     let uuid = uuidv1();
     const blockMessage = {
-      messageType: "block",
+      messageType: 'block',
       UUID: uuid,
       fromPort: port,
       version: version,
@@ -80,9 +95,9 @@ if (cluster.isMaster) {
       work_factor,
       block,
       previousToken
-    }
+    };
     block = [];
-    gossip(blockMessage, peers)
+    gossip(blockMessage, peers);
   };
 
   //3000: {port:3000, uuid: 3001, va}
@@ -101,7 +116,7 @@ if (cluster.isMaster) {
 
   //pick a random book and set it to favBook
   const pickRandomBook = () => {
-    let random = Math.floor(Math.random() * 55) + 1;
+    let random = Math.floor(Math.random() * 5) + 1;
 
     favBook = books[random];
 
@@ -124,22 +139,22 @@ if (cluster.isMaster) {
   const pickRandomTx = () => {
     let amount = Math.floor(Math.random() * 55) + 1;
     let uuid = uuidv1();
-    const randomPort = peers[Math.floor(Math.random()*peers.length)];
+    const randomPort = peers[Math.floor(Math.random() * peers.length)];
     const randomTx = {
-      messageType: "tx",
+      messageType: 'tx',
       amount: amount,
       UUID: uuid,
       fromPort: port,
       toPort: randomPort,
       version: version,
-      TTL: ttl,
-    }
-    gossip(randomTx, peers)
-  }
+      TTL: ttl
+    };
+    gossip(randomTx, peers);
+  };
 
-  //call that function every 5 sec
+  //call that function every 20 sec
   // setInterval(pickRandomBook, 5000);
-  setInterval(pickRandomTx, 5000);
+  setInterval(pickRandomTx, 50000);
 
   const verify = (_challenge, _token, _work_factor) => {
     let token = crypto
@@ -162,8 +177,6 @@ if (cluster.isMaster) {
     }
     return false;
   };
-
-
 
   const gossip = (msg, nodePeers) => {
     //loop that sends to all peers
@@ -190,7 +203,6 @@ if (cluster.isMaster) {
       const messagePort = req.body.fromPort;
       const portNodeState = nodeState[messagePort];
 
-
       if (portNodeState) {
         if (req.body['UUID'] !== portNodeState.UUID) {
           console.log('uuid: ', req.body['UUID'], 'nodestate uuid > ', portNodeState.UUID);
@@ -209,12 +221,12 @@ if (cluster.isMaster) {
 
     if (req.body.messageType === 'tx') {
       console.log('tx body :', req.body);
-      const foundIndex = block.findIndex((tx) => {
+      const foundIndex = block.findIndex(tx => {
         return tx['UUID'] == req.body['UUID'];
-      })
-      console.log('FOUNDINDEX: ', foundIndex)
+      });
+      console.log('FOUNDINDEX: ', foundIndex);
       if (foundIndex < 0) {
-        console.log('pusssssheeeed')
+        console.log('pusssssheeeed');
 
         block.push(req.body);
       }
@@ -226,8 +238,8 @@ if (cluster.isMaster) {
       let block = req.body;
 
       //verify
-      const verify = (_challenge, _token, _work_factor,_previousToken) => {
-        console.log('VERIFY DEF')
+      const verify = (_challenge, _token, _work_factor, _previousToken) => {
+        console.log('VERIFY DEF');
         let token = crypto
           .createHash('sha256')
           .update(_challenge + _previousToken)
@@ -242,7 +254,6 @@ if (cluster.isMaster) {
             break;
           }
         }
-        console.log()
         if (_token == token && tokenZeros >= _work_factor) {
           return true;
         }
@@ -253,16 +264,18 @@ if (cluster.isMaster) {
         .update(block.challenge + block.previousToken)
         .digest('hex');
 
-      console.log('TOKENS', block.token == tokenconsole)
+      console.log('TOKENS', block.token == tokenconsole);
       // console.log('CHALLENGE TOKEN WORK', block.challenge, block.token, block.work_factor);
 
       if (verify(block.challenge, block.token, block.work_factor, block.previousToken)) {
-        console.log('NEVER IN HERE');
+        console.log('IN HERE');
         blockchain.push(block);
 
         killMinter(minter);
 
-        startMinter(block.token, block.work_factor);
+        setTimeout(() => {
+          startMinter(block.token, block.work_factor);
+        }, 5000);
       }
       //kill slave
 
@@ -293,7 +306,7 @@ if (cluster.isMaster) {
     res.send('push recieved');
   });
 
-//Client Routes
+  //Client Routes
   app.get('/nodeState', (req, res) => {
     res.send(nodeState);
   });
@@ -348,6 +361,7 @@ if (cluster.isMaster) {
 
   app.listen(port, () => {
     console.log('Server listening on port ' + port);
+    // startMinter(startingToken, work_factor);
   });
 
   const books = [
@@ -356,60 +370,11 @@ if (cluster.isMaster) {
     'The Information by Martin Amis',
     'The Bottle Factory Outing by Beryl Bainbridge',
     'According to Queeney by Beryl Bainbridge',
-    "Flaubert's Parrot by Julian Barnes",
-    'A History of the World in 10 1/2 Chapters by Julian Barnes',
-    'Augustus Carp, Esq. by Himself: Being the Autobiography of a Really Good Man by Henry Howarth Bashford',
-    'Molloy by Samuel Beckett',
-    'Zuleika Dobson by Max Beerbohm',
-    'The Adventures of Augie March by Saul Bellow',
-    'The Uncommon Reader by Alan Bennett',
-    'Queen Lucia by EF Benson',
-    'The Ascent of Rum Doodle by WE Bowman',
-    'A Good Man in Africa by William Boyd',
-    'The History Man by Malcolm Bradbury',
-    'No Bed for Bacon by Caryl Brahms and SJ Simon',
-    'Illywhacker by Peter Carey',
-    'A Season in Sinji by JL Carr',
-    'The Harpole Report by JL Carr',
-    'The Hearing Trumpet by Leonora Carrington',
-    'Mister Johnson by Joyce Cary',
-    "The Horse's Mouth by Joyce Cary",
-    'Don Quixote by Miguel de Cervantes',
-    'The Case of the Gilded Fly by Edmund Crispin',
-    'Just William by Richmal Crompton',
-    'The Provincial Lady by EM Delafield',
-    'Slouching Towards Kalamazoo by Peter De Vries',
-    'The Pickwick Papers by Charles Dickens',
-    'Martin Chuzzlewit by Charles Dickens',
-    'Jacques the Fatalist and his Master by Denis Diderot',
-    'A Fairy Tale of New York by JP Donleavy',
-    'The Commitments by Roddy Doyle',
-    'Ennui by Maria Edgeworth',
-    'Cheese by Willem Elsschot',
-    "Bridget Jones's Diary by Helen Fielding",
-    'Joseph Andrews by Henry Fielding',
-    'Tom Jones by Henry Fielding',
-    'Caprice by Ronald Firbank',
-    'Bouvard et Pécuchet by Gustave Flaubert',
-    'Towards the End of the Morning by Michael Frayn',
-    'The Polygots by William Gerhardie',
-    'Cold Comfort Farm by Stella Gibbons',
-    'Dead Souls by Nikolai Gogol',
-    'Oblomov by Ivan Goncharov',
-    'The Wind in the Willows by Kenneth Grahame',
-    "Brewster's Millions by Richard Greaves (George Barr McCutcheon)",
-    "Squire Haggard's Journal by Michael Green",
-    'Our Man in Havana by Graham Greene',
-    'Travels with My Aunt by Graham Greene',
-    'Diary of a Nobody by George Grossmith',
-    'The Little World of Don Camillo by Giovanni Guareschi',
-    'The Curious Incident of the Dog in the Night-time by Mark Haddon',
-    'Catch-22 by Joseph Heller',
-    'Mr Blandings Builds His Dream House by Eric Hodgkins'
+    "Flaubert's Parrot by Julian Barnes"
   ];
 } else {
   //minter code
-  console.log(`Worker ${process.pid} started`);
+  console.log(`Minter ${process.pid} started`);
 
   let lastToken;
 
@@ -430,9 +395,9 @@ if (cluster.isMaster) {
       challenge = randomstring.generate();
       token = mint(challenge, _work_factor, _startingToken);
 
-      console.log(challenge);
+      // console.log(challenge);
     }
-    sendToken(challenge, token, _work_factor,_startingToken);
+    sendToken(challenge, token, _work_factor, _startingToken);
   };
 
   const mint = (_challenge, _work_factor, _startingToken) => {
@@ -458,10 +423,8 @@ if (cluster.isMaster) {
     }
   };
 
-
-  const sendToken = (challenge, token, work_factor,previousToken) => {
-
+  const sendToken = (challenge, token, work_factor, previousToken) => {
     console.log('found token!');
-    process.send({ type: 'found', challenge, token, work_factor,previousToken });
+    process.send({ type: 'found', challenge, token, work_factor, previousToken });
   };
 }
