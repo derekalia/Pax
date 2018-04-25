@@ -49,16 +49,16 @@ if (cluster.isMaster) {
       }
     });
 
-    // minter.on('disconnect', () => {
-    //   console.log('startingToken1', startingToken);
-    //   startMinter(startingToken, work_factor);
-    // });
+    minter.on('disconnect', () => {
+      console.log('startingToken1', startingToken);
+      startMinter(startingToken, work_factor);
+    });
 
-    // minter.on('exit', (minter, code, signal) => {
-    //   if (minter.exitedAfterDisconnect === true) {
-    //     console.log('Oh, it was just voluntary – no need to worry');
-    //   }
-    // });
+    minter.on('exit', (minter, code, signal) => {
+      if (minter.exitedAfterDisconnect === true) {
+        console.log('Oh, it was just voluntary – no need to worry');
+      }
+    });
   };
 
   const startMinter = (_startingToken, _work_factor) => {
@@ -77,7 +77,6 @@ if (cluster.isMaster) {
     minter.send('shutdown');
     minter.disconnect();
   };
-
 
   const blockBuilder = (challenge, token, _work_factor, previousToken) => {
     console.log('building the block');
@@ -177,7 +176,7 @@ if (cluster.isMaster) {
   const gossip = (msg, nodePeers) => {
     //loop that sends to all peers
     for (var i = 0; i < nodePeers.length; i++) {
-      console.log("nodePeers.length", nodePeers)
+      console.log('nodePeers.length', nodePeers);
       request(
         {
           url: 'http://localhost:' + nodePeers[i] + '/gossip',
@@ -334,15 +333,13 @@ if (cluster.isMaster) {
       },
       function(error, response, body) {
         let otherPort = String(body);
-
-        if (`peers.indexOf(otherPort) === -1 && otherPort !== 'undefined'`) {
+        console.log(otherPort);
+        if (peers.indexOf(otherPort) === -1 && otherPort !== 'undefined' && otherPort.length < 20) {
           peers.push(otherPort);
         }
       }
     );
   };
-
-  bootstrap();
 
   app.post('/peers', (req, res) => {
     let otherPort = req.body.fromPort;
@@ -355,6 +352,7 @@ if (cluster.isMaster) {
   app.listen(port, () => {
     console.log('Server listening on port ' + port);
     startMinter(startingToken, work_factor);
+    bootstrap();
   });
 
   const books = [
