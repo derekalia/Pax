@@ -13,7 +13,6 @@ const uuidv1 = require('uuid');
 var mint = require('./mint.js');
 let randomstring = require('randomstring');
 var crypto = require('crypto');
-
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
@@ -22,26 +21,44 @@ app.use(bodyParser.urlencoded({ extended: true }));
 if (cluster.isMaster) {
   console.log(`Master ${process.pid} is running`);
 
-  let minter; // minter = cluster.fork();
+  var balances = [];
+  var block = [];
+
+  let nodeState = {};
+  var favBook = 'Story';
+  var version = 0;
+  var gossipHistory = [];
+  var peers = [];
+  var ttl = 2;
+  const blockchain = [];
+
+  let minter;
   let startingToken = 'd939dj3';
-  let work_factor = 6;
+  let work_factor = 5;
 
   //receive message
   let listen = minter => {
     minter.on('message', async msg => {
       if (msg.type === 'found') {
-        // console.log('found it', msg.token);
-        // console.log('found it', msg.challenge);
-        // console.log('found it', msg.work_factor);
-        console.log('HERHEHEHEHEH');
         blockBuilder(msg.challenge, msg.token, msg.work_factor, msg.previousToken);
-        newChallenge(msg.previousToken, msg.work_factor, minter);
+        newChallenge(msg.token, msg.work_factor, minter);
       } else {
         console.log(
           `master ${process.pid} recevies message '${JSON.stringify(message)}' from worker ${minter.process.pid}`
         );
       }
     });
+
+    // minter.on('disconnect', () => {
+    //   console.log('startingToken1', startingToken);
+    //   startMinter(startingToken, work_factor);
+    // });
+
+    // minter.on('exit', (minter, code, signal) => {
+    //   if (minter.exitedAfterDisconnect === true) {
+    //     console.log('Oh, it was just voluntary – no need to worry');
+    //   }
+    // });
   };
 
   const startMinter = (_startingToken, _work_factor) => {
@@ -52,37 +69,20 @@ if (cluster.isMaster) {
   };
 
   const newChallenge = (_startingToken, _work_factor, minter) => {
-    let workers = cluster.workers || { key: 1 };
-    console.log('workers', workers);
-    let numWorkers = workers.keys;
-    console.log('numWorkers', numWorkers);
-    while (numWorkers) {
-      console.log('new challenge');
-      minter.send({ type: 'start', startingToken: _startingToken, work_factor: _work_factor });
-    }
+    console.log('restarting minter');
+    minter.send({ type: 'start', startingToken: _startingToken, work_factor: _work_factor });
   };
-
-  // startMinter(startingToken, work_factor);
-  // console.log("minter", minter.id)
 
   const killMinter = minter => {
     minter.send('shutdown');
     minter.disconnect();
-    setTimeout(() => {
-      minter.kill();
-      console.log('isDead', minter.isDead());
-    }, 2000);
   };
 
-  startMinter(startingToken, work_factor);
 
-  //send minter a token to use to start hashing
-  cluster.on('exit', (worker, code, signal) => {
-    console.log(`minter ${worker.process.pid} died`);
-  });
-
-  const blockBuilder = (challenge, token, work_factor, previousToken) => {
+  const blockBuilder = (challenge, token, _work_factor, previousToken) => {
     console.log('building the block');
+
+    //create block
     let uuid = uuidv1();
     const blockMessage = {
       messageType: 'block',
@@ -96,23 +96,21 @@ if (cluster.isMaster) {
       block,
       previousToken
     };
+
+    //add it locally
     block = [];
+
+    //update challenge
+    console.log('startingToken1', startingToken);
+    startingToken = token;
+    work_factor = _work_factor;
+
+    //send block out
     gossip(blockMessage, peers);
   };
 
-  //3000: {port:3000, uuid: 3001, va}
-  let nodeState = {};
-  var favBook = 'Story';
-  var version = 0;
-  var gossipHistory = [];
-  var peers = [];
-  var ttl = 2;
-  const blockchain = [];
-
   // naive: tx get pushed into this arr, if a block is found, we batch these tx run over the balances an update those
   //then bundle them into a block and push that block to the nodes we are connected to
-  var balances = [];
-  var block = [];
 
   //pick a random book and set it to favBook
   const pickRandomBook = () => {
@@ -152,8 +150,6 @@ if (cluster.isMaster) {
     gossip(randomTx, peers);
   };
 
-  //call that function every 20 sec
-  // setInterval(pickRandomBook, 5000);
   setInterval(pickRandomTx, 50000);
 
   const verify = (_challenge, _token, _work_factor) => {
@@ -181,6 +177,7 @@ if (cluster.isMaster) {
   const gossip = (msg, nodePeers) => {
     //loop that sends to all peers
     for (var i = 0; i < nodePeers.length; i++) {
+      console.log("nodePeers.length", nodePeers)
       request(
         {
           url: 'http://localhost:' + nodePeers[i] + '/gossip',
@@ -188,7 +185,7 @@ if (cluster.isMaster) {
           json: msg
         },
         function(error, response, body) {
-          // if (error) console.log('error', error)
+          if (error) console.log('error', error);
         }
       );
     }
@@ -271,15 +268,11 @@ if (cluster.isMaster) {
         console.log('IN HERE');
         blockchain.push(block);
 
+        startingToken = block.token;
+        work_factor = block.work_factor;
+
         killMinter(minter);
-
-        setTimeout(() => {
-          startMinter(block.token, block.work_factor);
-        }, 5000);
       }
-      //kill slave
-
-      //start new slave
     }
 
     // continue to push message based on ttl
@@ -348,6 +341,7 @@ if (cluster.isMaster) {
       }
     );
   };
+
   bootstrap();
 
   app.post('/peers', (req, res) => {
@@ -355,13 +349,12 @@ if (cluster.isMaster) {
     if (peers.indexOf(otherPort) === -1) {
       peers.push(otherPort);
     }
-
     res.send(port);
   });
 
   app.listen(port, () => {
     console.log('Server listening on port ' + port);
-    // startMinter(startingToken, work_factor);
+    startMinter(startingToken, work_factor);
   });
 
   const books = [
