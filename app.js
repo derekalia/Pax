@@ -97,7 +97,7 @@ if (cluster.isMaster) {
     };
 
     //add it locally
-    block = [];
+    // block = [];
 
     //update challenge
     console.log('startingToken1', startingToken);
@@ -149,7 +149,7 @@ if (cluster.isMaster) {
     gossip(randomTx, peers);
   };
 
-  setInterval(pickRandomTx, 50000);
+  setInterval(pickRandomTx, 5000);
 
   const verify = (_challenge, _token, _work_factor) => {
     let token = crypto
@@ -176,7 +176,6 @@ if (cluster.isMaster) {
   const gossip = (msg, nodePeers) => {
     //loop that sends to all peers
     for (var i = 0; i < nodePeers.length; i++) {
-      console.log('nodePeers.length', nodePeers);
       request(
         {
           url: 'http://localhost:' + nodePeers[i] + '/gossip',
@@ -195,26 +194,27 @@ if (cluster.isMaster) {
     console.log('test req.body: ', req.body);
     // const currentNodeState = nodeState['3000'];
     //check uuid // TODO: add to uuid history
-    if (req.body.type === 'book') {
-      const messagePort = req.body.fromPort;
-      const portNodeState = nodeState[messagePort];
+    // if (req.body.type === 'book') {
+    //   const messagePort = req.body.fromPort;
+    //   const portNodeState = nodeState[messagePort];
+    //
+    //   if (portNodeState) {
+    //     if (req.body['UUID'] !== portNodeState.UUID) {
+    //       console.log('uuid: ', req.body['UUID'], 'nodestate uuid > ', portNodeState.UUID);
+    //       //check version numbers
+    //       if (req.body.version > portNodeState.version) {
+    //         console.log(' body version >', req.body.version, 'nodestate version > ', portNodeState.version);
+    //         //set to state
+    //         nodeState[messagePort] = req.body;
+    //       }
+    //     }
+    //   } else {
+    //     nodeState[messagePort] = req.body;
+    //     console.log(nodeState, '< nodestate');
+    //   }
+    // }
 
-      if (portNodeState) {
-        if (req.body['UUID'] !== portNodeState.UUID) {
-          console.log('uuid: ', req.body['UUID'], 'nodestate uuid > ', portNodeState.UUID);
-          //check version numbers
-          if (req.body.version > portNodeState.version) {
-            console.log(' body version >', req.body.version, 'nodestate version > ', portNodeState.version);
-            //set to state
-            nodeState[messagePort] = req.body;
-          }
-        }
-      } else {
-        nodeState[messagePort] = req.body;
-        console.log(nodeState, '< nodestate');
-      }
-    }
-
+    console.log("req.body.messageType", req.body.messageType)
     if (req.body.messageType === 'tx') {
       console.log('tx body :', req.body);
       const foundIndex = block.findIndex(tx => {
@@ -264,7 +264,7 @@ if (cluster.isMaster) {
       // console.log('CHALLENGE TOKEN WORK', block.challenge, block.token, block.work_factor);
 
       if (verify(block.challenge, block.token, block.work_factor, block.previousToken)) {
-        console.log('IN HERE');
+        console.log('IN HERE and WE GIVEN BIRTH TO A BLOCK... OH YEASSS');
         blockchain.push(block);
 
         startingToken = block.token;
@@ -332,11 +332,14 @@ if (cluster.isMaster) {
         json: { fromPort: port }
       },
       function(error, response, body) {
+
+        if(typeof body == "number"){
+          console.log('yo motherfucker is a num')
         let otherPort = String(body);
-        console.log(otherPort);
-        if (peers.indexOf(otherPort) === -1 && otherPort !== 'undefined' && otherPort.length < 20) {
+        if (peers.indexOf(otherPort) === -1 && otherPort !== 'undefined') {
           peers.push(otherPort);
         }
+      }
       }
     );
   };
