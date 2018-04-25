@@ -10,7 +10,7 @@ var http = require('http');
 var request = require('request');
 var bodyParser = require('body-parser');
 const uuidv1 = require('uuid');
-var mint = require('./mint.js');
+// var mint = require('./mint.js');
 let randomstring = require('randomstring');
 var crypto = require('crypto');
 app.use(bodyParser.json());
@@ -133,6 +133,8 @@ if (cluster.isMaster) {
     gossip(msg, peers);
   };
 
+  // setInterval(pickRandomTx, 10000);
+
   const pickRandomTx = () => {
     let amount = Math.floor(Math.random() * 55) + 1;
     let uuid = uuidv1();
@@ -149,7 +151,21 @@ if (cluster.isMaster) {
     gossip(randomTx, peers);
   };
 
-  setInterval(pickRandomTx, 5000);
+  const sendTx = (_amount, _to) => {
+    let amount = _amount;
+    let uuid = uuidv1();
+    const sendToPort = _to;
+    const tx = {
+      messageType: 'tx',
+      amount: amount,
+      UUID: uuid,
+      fromPort: port,
+      toPort: sendToPort,
+      version: version,
+      TTL: ttl
+    };
+    gossip(tx, peers);
+  };
 
   const verify = (_challenge, _token, _work_factor) => {
     let token = crypto
@@ -214,7 +230,7 @@ if (cluster.isMaster) {
     //   }
     // }
 
-    console.log("req.body.messageType", req.body.messageType)
+    console.log('req.body.messageType', req.body.messageType);
     if (req.body.messageType === 'tx') {
       console.log('tx body :', req.body);
       const foundIndex = block.findIndex(tx => {
@@ -319,6 +335,12 @@ if (cluster.isMaster) {
     res.send(peers);
   });
 
+  app.post('/sendTrans', (req, res) => {
+    // res.send(req);
+    sendTx(req.body.amount, req.body.to);
+    console.log('send', req.body);
+  });
+
   app.get('/', (req, res) => {
     // console.log(books);
     res.sendFile(__dirname + '/index.html');
@@ -330,16 +352,14 @@ if (cluster.isMaster) {
         url: 'http://localhost:' + targetPort + '/peers',
         method: 'POST',
         json: { fromPort: port }
-      },
+      }, 
       function(error, response, body) {
-
-        if(typeof body == "number"){
-          console.log('yo motherfucker is a num')
-        let otherPort = String(body);
-        if (peers.indexOf(otherPort) === -1 && otherPort !== 'undefined') {
-          peers.push(otherPort);
+        if (typeof body == 'number') {
+          let otherPort = String(body);
+          if (peers.indexOf(otherPort) === -1 && otherPort !== 'undefined') {
+            peers.push(otherPort);
+          }
         }
-      }
       }
     );
   };
