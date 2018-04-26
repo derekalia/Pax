@@ -40,8 +40,27 @@ if (cluster.isMaster) {
   let listen = minter => {
     minter.on('message', async msg => {
       if (msg.type === 'found') {
-        blockBuilder(msg.challenge, msg.token, msg.work_factor, msg.previousToken);
+        let alreadyMinted = false
+        //check to see if its already been minted
+        blockchain.forEach((block)=>{
+          console.log('block',block )
+          if(block.previousToken == msg.previousToken){
+            alreadyMinted = true
+          }
+        })
+
+        console.log("alreadyMinted ->", alreadyMinted)
+        //if this block is already minted
+        if(alreadyMinted){
+          console.log("alreadyMinted -> inside")
+          // blockBuilder(msg.challenge, msg.token, msg.work_factor, msg.previousToken);
+          // kill and start new
+          killMinter(minter);
+        }else{
+          console.log("alreadyMinted -> outside not")
+          blockBuilder(msg.challenge, msg.token, msg.work_factor, msg.previousToken);
         newChallenge(msg.token, msg.work_factor, minter);
+        }
       } else {
         console.log(
           `master ${process.pid} recevies message '${JSON.stringify(message)}' from worker ${minter.process.pid}`
@@ -50,8 +69,10 @@ if (cluster.isMaster) {
     });
 
     minter.on('disconnect', () => {
-      console.log('startingToken1', startingToken);
-      startMinter(startingToken, work_factor);
+      console.log('disconnecting minter');
+      //always use the top block
+      let topBlock = blockchain[blockchain.length-1]
+      startMinter(topBlock.token, topBlock.work_factor);
     });
 
     minter.on('exit', (minter, code, signal) => {
@@ -99,12 +120,16 @@ if (cluster.isMaster) {
     //add it locally
     // block = [];
 
+
+    blockchain.push(blockMessage);
+
     //update challenge
-    console.log('startingToken1', startingToken);
+    // console.log('startingToken blockBuilder', startingToken);
     startingToken = token;
     work_factor = _work_factor;
 
     //send block out
+    console.log('gossiped in blockbuilder')
     gossip(blockMessage, peers);
   };
 
@@ -164,33 +189,36 @@ if (cluster.isMaster) {
       version: version,
       TTL: ttl
     };
+    block.push(tx);
     gossip(tx, peers);
   };
 
-  const verify = (_challenge, _token, _work_factor) => {
-    let token = crypto
-      .createHash('sha256')
-      .update(_challenge)
-      .digest('hex');
+  // const verify = (_challenge, _token, _work_factor) => {
+  //   let token = crypto
+  //     .createHash('sha256')
+  //     .update(_challenge)
+  //     .digest('hex');
 
-    let tokenZeros = 0;
+  //   let tokenZeros = 0;
 
-    for (var i = 0; i < token.length; i++) {
-      if (token[i] === '0') {
-        tokenZeros++;
-      } else {
-        break;
-      }
-    }
+  //   for (var i = 0; i < token.length; i++) {
+  //     if (token[i] === '0') {
+  //       tokenZeros++;
+  //     } else {
+  //       break;
+  //     }
+  //   }
 
-    if (_token == token && tokenZeros >= _work_factor) {
-      return true;
-    }
-    return false;
-  };
+  //   if (_token == token && tokenZeros >= _work_factor) {
+  //     return true;
+  //   }
+  //   return false;
+  // };
 
   const gossip = (msg, nodePeers) => {
     //loop that sends to all peers
+    console.log('sending it out to', nodePeers);
+    console.log('sending it out to', msg);
     for (var i = 0; i < nodePeers.length; i++) {
       request(
         {
@@ -206,31 +234,8 @@ if (cluster.isMaster) {
   };
 
   app.post('/gossip', (req, res) => {
-    console.log(`Node${port} recieved book: ${req.body.favBook} from Node${req.body.fromPort}`);
-    console.log('test req.body: ', req.body);
-    // const currentNodeState = nodeState['3000'];
-    //check uuid // TODO: add to uuid history
-    // if (req.body.type === 'book') {
-    //   const messagePort = req.body.fromPort;
-    //   const portNodeState = nodeState[messagePort];
-    //
-    //   if (portNodeState) {
-    //     if (req.body['UUID'] !== portNodeState.UUID) {
-    //       console.log('uuid: ', req.body['UUID'], 'nodestate uuid > ', portNodeState.UUID);
-    //       //check version numbers
-    //       if (req.body.version > portNodeState.version) {
-    //         console.log(' body version >', req.body.version, 'nodestate version > ', portNodeState.version);
-    //         //set to state
-    //         nodeState[messagePort] = req.body;
-    //       }
-    //     }
-    //   } else {
-    //     nodeState[messagePort] = req.body;
-    //     console.log(nodeState, '< nodestate');
-    //   }
-    // }
+    console.log(`Message recieved from Node ${req.body.fromPort}`);
 
-    console.log('req.body.messageType', req.body.messageType);
     if (req.body.messageType === 'tx') {
       console.log('tx body :', req.body);
       const foundIndex = block.findIndex(tx => {
@@ -246,47 +251,37 @@ if (cluster.isMaster) {
 
     if (req.body.messageType === 'block') {
       console.log('block body :', req.body);
-
       let block = req.body;
 
-      //verify
-      const verify = (_challenge, _token, _work_factor, _previousToken) => {
-        console.log('VERIFY DEF');
-        let token = crypto
-          .createHash('sha256')
-          .update(_challenge + _previousToken)
-          .digest('hex');
-
-        let tokenZeros = 0;
-
-        for (var i = 0; i < token.length; i++) {
-          if (token[i] === '0') {
-            tokenZeros++;
-          } else {
-            break;
-          }
-        }
-        if (_token == token && tokenZeros >= _work_factor) {
-          return true;
-        }
-        return false;
-      };
-      let tokenconsole = crypto
-        .createHash('sha256')
-        .update(block.challenge + block.previousToken)
-        .digest('hex');
-
-      console.log('TOKENS', block.token == tokenconsole);
-      // console.log('CHALLENGE TOKEN WORK', block.challenge, block.token, block.work_factor);
-
+      //check it
       if (verify(block.challenge, block.token, block.work_factor, block.previousToken)) {
-        console.log('IN HERE and WE GIVEN BIRTH TO A BLOCK... OH YEASSS');
-        blockchain.push(block);
-
         startingToken = block.token;
         work_factor = block.work_factor;
 
-        killMinter(minter);
+        console.log('IN HERE and WE GIVEN BIRTH TO A BLOCK... OH YEASSS');
+
+        //we should check if the block has already been minted here,
+        let alreadyMinted = false
+        //check to see if its already been minted
+        blockchain.forEach((_block)=>{
+          if(_block.previousToken == block.previousToken){
+            alreadyMinted = true
+          }
+        })
+
+        //not fresh
+        if(alreadyMinted){
+         console.log('alreadyminted true')
+         //do something here??
+        }else{
+          console.log('alreadyminted false')
+          killMinter(minter);
+          blockchain.push(block);
+        }
+         //kills minter and starts new one
+
+
+
       }
     }
 
@@ -352,7 +347,7 @@ if (cluster.isMaster) {
         url: 'http://localhost:' + targetPort + '/peers',
         method: 'POST',
         json: { fromPort: port }
-      }, 
+      },
       function(error, response, body) {
         if (typeof body == 'number') {
           let otherPort = String(body);
@@ -386,6 +381,28 @@ if (cluster.isMaster) {
     'According to Queeney by Beryl Bainbridge',
     "Flaubert's Parrot by Julian Barnes"
   ];
+
+  //verify
+  const verify = (_challenge, _token, _work_factor, _previousToken) => {
+    let token = crypto
+      .createHash('sha256')
+      .update(_challenge + _previousToken)
+      .digest('hex');
+
+    let tokenZeros = 0;
+
+    for (var i = 0; i < token.length; i++) {
+      if (token[i] === '0') {
+        tokenZeros++;
+      } else {
+        break;
+      }
+    }
+    if (_token == token && tokenZeros >= _work_factor) {
+      return true;
+    }
+    return false;
+  };
 } else {
   //minter code
   console.log(`Minter ${process.pid} started`);
